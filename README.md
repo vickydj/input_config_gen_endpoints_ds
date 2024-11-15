@@ -10,6 +10,7 @@
 
 ## To do
 1. Create another handler to send phoning phone list to SH/ or log them and read from the dashboard app.
+2. Keep track of updated serverclass, reload them at an interval.
 
 
 To modify the below 
