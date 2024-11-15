@@ -1,8 +1,20 @@
-# Hello-world app for custom REST handlers
+# Rest handler to generate confs
 
 ## Overview
 
-The hello-world app for Splunk Enterprise contains example custom REST handlers that provide a starting point for app developers. 
+    This app sits on deployment servers, receives payload from the SH app <app-name here>.
+  
+    The python program decodes the payload and generates inputs.conf and serverclass.conf
+  
+    Checks for existing app/conf files and adds only new updates. Duplicates are ignored.
+
+## To do
+1. Create another handler to send phoning phone list to SH/ or log them and read from the dashboard app.
+
+
+To modify the below 
+==============
+
 
 For more information about creating custom REST handlers in Splunk Enterprise, see [Extend the Splunk Enterprise REST API with custom endpoints](https://dev.splunk.com/enterprise/docs/developapps/customrestendpoints) in the _Splunk Enterprise Developer Guide_.
 
