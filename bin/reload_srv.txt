@@ -1,0 +1,50 @@
+import sys
+import splunklib.six as six
+import urllib
+from xml.etree import ElementTree
+import getpass
+
+# Replace with your Splunk server details
+HOST = input("Enter Splunk server hostname/ip: ")
+PORT = 8089
+splunkUser = input("Enter Splunk Admin Username: ")
+splunkPassword = getpass.getpass("Enter Splunk Admin Password: ")
+
+# Server class name to reload (leave blank to reload all server classes)
+sc = input("Enter Serverclass name to reload OR press Enter to reload all server classes: ")
+
+# Establish connection and authenticate
+connection = six.moves.http_client.HTTPSConnection(HOST, PORT)
+body = urllib.urlencode({'username': splunkUser, 'password': splunkPassword})
+headers = {'Content-Type': 'application/x-www-form-urlencoded', 'Host': HOST}
+connection.request("POST", "/services/auth/login", body, headers)
+response = connection.getresponse()
+content = response.read()
+connection.close()
+
+# Extract session key
+session_key = ElementTree.XML(content).findtext('./sessionKey')
+
+# Re-establish connection with session key
+connection = six.moves.http_client.HTTPSConnection(HOST, PORT)
+headers = {'Content-Type': 'application/x-www-form-urlencoded', 'Host': HOST, 'Authorization': 'Splunk %s' % session_key}
+if not sc:
+    body = ''
+else:
+    body = urllib.urlencode({'serverclass': sc})
+
+# Reload deployment server
+connection.request("POST", "/services/deployment/server/config/_reload", body, headers)
+response = connection.getresponse()
+content = response.read()
+connection.close()
+
+# Check response status
+if response.status == 200:
+    if not sc:
+        print("Deployment Server reloaded successfully")
+    else:
+        print("Deployment server for class %s reloaded successfully" % sc)
+else:
+    print("Deployment Server reload failed")
+    print(content)

@@ -6,6 +6,7 @@ import json
 import re
 from collections import defaultdict
 from pathlib import Path
+import subprocess
 
 from splunk.persistconn.application import PersistentServerConnectionApplication
 
@@ -15,6 +16,11 @@ deploy this on ds and check if successfully reaching uf
 fix timestamp - date time doesnt have now()
 create ability to delete source/app probably in a new endpoint
 create ability to update source/app probably in a new endpoint
+
+validate :
+app name - can't have space 
+any fields can't have space
+
 """
 
 # this app is targetted to DS -- change the path 
@@ -199,6 +205,35 @@ class MyRestHandler(PersistentServerConnectionApplication):
             logger.error(f"Failed to write configurations to file: {str(e)}")
             return False
 
+    def reload_deploy_server(self, serverclass_name):
+        logger.info(f"Reloading deploy-server with serverclass: {serverclass_name}")
+        try:
+            splunk_home = os.environ.get('SPLUNK_HOME', '/opt/splunk')
+            splunk_username = os.environ.get('admin')
+            splunk_password = os.environ.get('password')
+            
+            cmd = [
+                f"{splunk_home}/bin/splunk",
+                "reload",
+                "deploy-server",
+                "-class",
+                serverclass_name
+            ]
+            
+            if splunk_username and splunk_password:
+                cmd.extend(["-auth", f"{splunk_username}:{splunk_password}"])
+                
+            result = subprocess.run(
+                cmd,
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            logger.info(f"Deploy-server reload successful: {result.stdout}")
+            return True
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to reload deploy-server: {e.stderr}")
+            raise
 
     def compare_and_add_serverclass_whitelist_conf(self, env, app_name, index, sourcetype, hosts):
         logger.debug(f"Processing serverclass with hosts: {hosts}")
@@ -255,6 +290,7 @@ stateOnClient = enabled
             with open(serverclass_path, 'a') as f:
                 f.write(content)
             logger.info(f"Added new server class configuration for {serverclass_name}")
+            self.reload_deploy_server(serverclass_name)
             return "New class added"
 
         elif new_hosts:
@@ -268,12 +304,14 @@ stateOnClient = enabled
                 f.write(updated_content)
 
             logger.info(f"Added {len(new_hosts)} new hosts to existing server class {serverclass_name}")
+
+            self.reload_deploy_server(serverclass_name)
             return "existing class updated"
 
         else:
             logger.info(f"No new hosts to add for server class {serverclass_name}. Configuration unchanged.")
             return "no new updates"
-
+    
 
     def handle(self, in_string):
 
