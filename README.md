@@ -14,6 +14,18 @@
 
 
 To modify the below 
+
+# to do 
+create ability to delete source/app probably in a new endpoint
+create ability to update source/app probably in a new endpoint
+
+validate :
+app name - can't have space 
+any fields can't have space
+
+
+
+
 ==============
 
 

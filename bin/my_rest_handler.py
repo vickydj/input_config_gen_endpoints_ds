@@ -6,26 +6,9 @@ import json
 import re
 from collections import defaultdict
 from pathlib import Path
-import subprocess
+
 
 from splunk.persistconn.application import PersistentServerConnectionApplication
-
-# to do 
-"""
-deploy this on ds and check if successfully reaching uf 
-fix timestamp - date time doesnt have now()
-create ability to delete source/app probably in a new endpoint
-create ability to update source/app probably in a new endpoint
-
-validate :
-app name - can't have space 
-any fields can't have space
-
-"""
-
-# this app is targetted to DS -- change the path 
-
-
 
 def setup_logger(level):
     logger = logging.getLogger('_rest_process_payload_toconfigs')
@@ -205,43 +188,17 @@ class MyRestHandler(PersistentServerConnectionApplication):
             logger.error(f"Failed to write configurations to file: {str(e)}")
             return False
 
-    def reload_deploy_server(self, serverclass_name):
-        logger.info(f"Reloading deploy-server with serverclass: {serverclass_name}")
-        try:
-            splunk_home = os.environ.get('SPLUNK_HOME', '/opt/splunk')
-            splunk_username = os.environ.get('admin')
-            splunk_password = os.environ.get('password')
-            
-            cmd = [
-                f"{splunk_home}/bin/splunk",
-                "reload",
-                "deploy-server",
-                "-class",
-                serverclass_name
-            ]
-            
-            if splunk_username and splunk_password:
-                cmd.extend(["-auth", f"{splunk_username}:{splunk_password}"])
-                
-            result = subprocess.run(
-                cmd,
-                check=True,
-                capture_output=True,
-                text=True
-            )
-            logger.info(f"Deploy-server reload successful: {result.stdout}")
-            return True
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to reload deploy-server: {e.stderr}")
-            raise
 
     def compare_and_add_serverclass_whitelist_conf(self, env, app_name, index, sourcetype, hosts):
         logger.debug(f"Processing serverclass with hosts: {hosts}")
         current_time = dt.now().strftime("%Y-%m-%d %H:%M:%S %Z")
         serverclass_directory = Path(os.environ.get('SPLUNK_HOME', '')) / 'etc' / 'apps' / 'automated_config_generator_serverclass' / 'local'
+        # serverclass_directory = Path(os.environ.get('SPLUNK_HOME', '')) / 'etc' / 'system' / 'local'
         os.makedirs(serverclass_directory, exist_ok=True)
         serverclass_path = os.path.join(serverclass_directory, 'serverclass.conf')
+        logger.debug(f"Serverclass path: {serverclass_path}")
         serverclass_name = f"{env}_{app_name}_{index}_{sourcetype}"
+        logger.debug(f"Serverclass name: {serverclass_name}")   
 
         existing_content = ""
         existing_hosts = set()
@@ -290,7 +247,7 @@ stateOnClient = enabled
             with open(serverclass_path, 'a') as f:
                 f.write(content)
             logger.info(f"Added new server class configuration for {serverclass_name}")
-            self.reload_deploy_server(serverclass_name)
+            # self.reload_deploy_server(serverclass_name)
             return "New class added"
 
         elif new_hosts:
@@ -305,7 +262,7 @@ stateOnClient = enabled
 
             logger.info(f"Added {len(new_hosts)} new hosts to existing server class {serverclass_name}")
 
-            self.reload_deploy_server(serverclass_name)
+            # self.reload_deploy_server(serverclass_name)
             return "existing class updated"
 
         else:
