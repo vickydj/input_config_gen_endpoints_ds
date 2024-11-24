@@ -24,6 +24,7 @@ logger = setup_logger(logging.DEBUG)
 class MyRestHandler(PersistentServerConnectionApplication):
     
     directory_path = Path(os.environ.get('SPLUNK_HOME', '')) / 'etc' / 'deployment-apps'
+    serverclass_directory = Path(os.environ.get('SPLUNK_HOME', '')) / 'etc' / 'apps' / 'automated_config_generator_serverclass' / 'local'
 
 
     def __init__(self, command_line, command_arg):
@@ -32,19 +33,38 @@ class MyRestHandler(PersistentServerConnectionApplication):
     def get_values(self, in_string):
         logger.debug(f"Received payload: {in_string}")
         try:
-            
+            # Decode the first level JSON
             outer_json = json.loads(in_string)
-            logger.debug(f"Parsed outer JSON: {outer_json}")
+            logger.debug(f"Parsed outer JSON 1: {outer_json}")
+            
+            # Decode the payload wrapper (second level JSON)
+            payload_wrapper = json.loads(outer_json.get('payload', '{}'))
+            logger.debug(f"Parsed payload wrapper 1: {payload_wrapper}")
+            
+            # Handle additional escaping in the payload content (third level JSON)
+            payload_raw = payload_wrapper.get('payload', '{}')
+            logger.debug(f"Raw payload content before final parse 1: {payload_raw}")
+            
+            # Clean up the payload string
+            payload_cleaned = payload_raw.strip('"\'')
+            payload_cleaned = payload_cleaned.replace("\\'", '"')
+            payload_cleaned = payload_cleaned.replace('\\n', '\n')
+            payload_cleaned = payload_cleaned.replace('\\\"', '"')
+            payload_cleaned = payload_cleaned.replace('\\\\', '\\')
+            payload_cleaned = payload_cleaned.encode().decode('unicode_escape')
+            
+            logger.debug(f"Cleaned payload: {payload_cleaned}")
+            
+            # Parse the cleaned JSON
+            payload_json = json.loads(payload_cleaned)
+
             
             
-            payload_wrapper = json.loads(outer_json['payload'])
-            logger.debug(f"Parsed payload wrapper: {payload_wrapper}")
+            logger.debug(f"CLEAN PAYLOAD: {payload_cleaned}")
+            # Parse the cleaned JSON string
+            payload_json = json.loads(payload_cleaned)
             
-            # Parse the actual payload content (third level)
-            payload_json = json.loads(payload_wrapper['payload'])
-            logger.debug(f"Parsed final payload JSON: {payload_json}")
-            
-            # Extract the required values
+            # Extract required values with default fallbacks
             message = payload_json.get('message', '')
             index_name = payload_json.get('my_index', '')
             my_sourcetype = payload_json.get('my_sourcetype', '')
@@ -57,21 +77,18 @@ class MyRestHandler(PersistentServerConnectionApplication):
             environment = additional_metadata.get('environment', '')
             version = additional_metadata.get('version', '')
             
-            logger.debug(f"Extracted values: message={message}, index={index_name}, "
-                        f"sourcetype={my_sourcetype}, source={my_source}, host={my_host}, "
-                        f"app={app_name}, env={environment}, ver={version}")
-
+            logger.debug(f"Extracted values: message={message}, index_name={index_name}, "
+                        f"sourcetype={my_sourcetype}, sources={my_source}, hosts={my_host}, "
+                        f"app_name={app_name}, environment={environment}, version={version}")
+            
             return index_name, message, my_sourcetype, app_name, environment, version, my_source, my_host
 
         except json.JSONDecodeError as e:
             logger.error(f"JSON decoding error: {str(e)}")
-            raise
-        except KeyError as e:
-            logger.error(f"Missing key in JSON: {str(e)}")
-            raise
+            raise ValueError(f"Failed to decode JSON: {str(e)}")
         except Exception as e:
             logger.error(f"Unexpected error in get_values: {str(e)}")
-            raise
+            raise ValueError(f"Unexpected error: {str(e)}")
 
     def generate_configs(self, sources, sourcetype, index):
         logger.debug(f"Generate config {sources,sourcetype,index}")
@@ -192,10 +209,9 @@ class MyRestHandler(PersistentServerConnectionApplication):
     def compare_and_add_serverclass_whitelist_conf(self, env, app_name, index, sourcetype, hosts):
         logger.debug(f"Processing serverclass with hosts: {hosts}")
         current_time = dt.now().strftime("%Y-%m-%d %H:%M:%S %Z")
-        serverclass_directory = Path(os.environ.get('SPLUNK_HOME', '')) / 'etc' / 'apps' / 'automated_config_generator_serverclass' / 'local'
-        # serverclass_directory = Path(os.environ.get('SPLUNK_HOME', '')) / 'etc' / 'system' / 'local'
-        os.makedirs(serverclass_directory, exist_ok=True)
-        serverclass_path = os.path.join(serverclass_directory, 'serverclass.conf')
+        
+        os.makedirs(self.serverclass_directory, exist_ok=True)
+        serverclass_path = os.path.join(self.serverclass_directory, 'serverclass.conf')
         logger.debug(f"Serverclass path: {serverclass_path}")
         serverclass_name = f"{env}_{app_name}_{index}_{sourcetype}"
         logger.debug(f"Serverclass name: {serverclass_name}")   
