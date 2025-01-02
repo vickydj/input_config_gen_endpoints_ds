@@ -291,7 +291,7 @@ stateOnClient = enabled
             index_name, message, precedence, my_sourcetype, app_name, environment, version, my_source, my_host = self.get_values(in_string)
 
             prefix_map = {"low": "z_", "normal": "y_", "high": "_"}
-            app_name = prefix_map[precedence] + app_name            
+            app_name = prefix_map[precedence] + index_name + "_" + app_name             
 
 
             # perform all the calls from here, and get its status 
