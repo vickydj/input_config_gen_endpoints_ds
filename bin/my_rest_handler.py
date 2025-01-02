@@ -11,9 +11,9 @@ from pathlib import Path
 from splunk.persistconn.application import PersistentServerConnectionApplication
 
 def setup_logger(level):
-    logger = logging.getLogger('_rest_process_payload_toconfigs')
+    logger = logging.getLogger('input_conf_generator_ds')
     logger.setLevel(level)
-    handler = logging.handlers.RotatingFileHandler(os.environ['SPLUNK_HOME']+'/var/log/splunk/_rest_process_payload_toconfigs.log', maxBytes=1000000, backupCount=5)
+    handler = logging.handlers.RotatingFileHandler(os.environ['SPLUNK_HOME']+'/var/log/splunk/input_conf_generator_ds.log', maxBytes=1000000, backupCount=5)
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     handler.setFormatter(formatter)
     logger.addHandler(handler)
@@ -24,7 +24,7 @@ logger = setup_logger(logging.DEBUG)
 class MyRestHandler(PersistentServerConnectionApplication):
     
     directory_path = Path(os.environ.get('SPLUNK_HOME', '')) / 'etc' / 'deployment-apps'
-    serverclass_directory = Path(os.environ.get('SPLUNK_HOME', '')) / 'etc' / 'apps' / 'automated_config_generator_serverclass' / 'local'
+    serverclass_directory = Path(os.environ.get('SPLUNK_HOME', '')) / 'etc' / 'apps' / 'input_conf_generator_serverclass' / 'local'
 
 
     def __init__(self, command_line, command_arg):
@@ -35,11 +35,11 @@ class MyRestHandler(PersistentServerConnectionApplication):
         try:
             # Decode the first level JSON
             outer_json = json.loads(in_string)
-            logger.debug(f"Parsed outer JSON 1: {outer_json}")
+            logger.debug(f"Parsed outer JSON: {outer_json}")
             
             # Decode the payload wrapper (second level JSON)
             payload_wrapper = json.loads(outer_json.get('payload', '{}'))
-            logger.debug(f"Parsed payload wrapper 1: {payload_wrapper}")
+            logger.debug(f"Parsed payload wrapper: {payload_wrapper}")
             
             # Handle additional escaping in the payload content (third level JSON)
             payload_raw = payload_wrapper.get('payload', '{}')
@@ -59,13 +59,9 @@ class MyRestHandler(PersistentServerConnectionApplication):
             payload_json = json.loads(payload_cleaned)
 
             
-            
-            logger.debug(f"CLEAN PAYLOAD: {payload_cleaned}")
-            # Parse the cleaned JSON string
-            payload_json = json.loads(payload_cleaned)
-            
             # Extract required values with default fallbacks
             message = payload_json.get('message', '')
+            precedence = payload_json.get('precedence', '')
             index_name = payload_json.get('my_index', '')
             my_sourcetype = payload_json.get('my_sourcetype', '')
             my_source = payload_json.get('my_source', [])
@@ -77,11 +73,11 @@ class MyRestHandler(PersistentServerConnectionApplication):
             environment = additional_metadata.get('environment', '')
             version = additional_metadata.get('version', '')
             
-            logger.debug(f"Extracted values: message={message}, index_name={index_name}, "
+            logger.debug(f"Extracted values: message={message}, precedence={precedence}, index_name={index_name}, "
                         f"sourcetype={my_sourcetype}, sources={my_source}, hosts={my_host}, "
                         f"app_name={app_name}, environment={environment}, version={version}")
             
-            return index_name, message, my_sourcetype, app_name, environment, version, my_source, my_host
+            return index_name, message, precedence, my_sourcetype, app_name, environment, version, my_source, my_host
 
         except json.JSONDecodeError as e:
             logger.error(f"JSON decoding error: {str(e)}")
@@ -129,7 +125,7 @@ class MyRestHandler(PersistentServerConnectionApplication):
         if new_configs:
             logger.info(f"Attempting to write new configs : {local_conf_path}")
             with local_conf_path.open('a') as f:
-                # Write the message once, outside the loop
+                
                 f.write(f'\n# *** Start of inputs from : {message} : Created at {dt.now().strftime("%Y-%m-%d %H:%M:%S %Z")}\n')
                 
                 for stanza, lines in new_configs.items():
@@ -142,7 +138,7 @@ class MyRestHandler(PersistentServerConnectionApplication):
 
         return len(new_configs)
 
-    def write_configs_to_file(self, configs, app_name, message, filename=None):
+    def write_configs_to_file(self, configs, app_name, version, message, filename=None):
         if filename is None:
             
             directory = self.directory_path / app_name / 'default'
@@ -170,9 +166,10 @@ class MyRestHandler(PersistentServerConnectionApplication):
 #==============================================================================
 # {app_name.center(76, '*')}
 #==============================================================================
-# Created by: Automated Splunk App Configuration
+# Created by: input_conf_generator
 # Author: Vignesh Narendran
 # Creation Date: {current_time}
+# Version: {version}
 # 
 # Description:
 # This file was automatically generated as part of the {app_name} Splunk app.
@@ -291,14 +288,19 @@ stateOnClient = enabled
         return_payload_string = ""
         try:
             logger.info(f"Received payload: {in_string}")
-            index_name, message, my_sourcetype, app_name, environment, version, my_source, my_host = self.get_values(in_string)
+            index_name, message, precedence, my_sourcetype, app_name, environment, version, my_source, my_host = self.get_values(in_string)
+
+            prefix_map = {"low": "z_", "normal": "y_", "high": "_"}
+            app_name = prefix_map[precedence] + app_name            
+
+
             # perform all the calls from here, and get its status 
             if app_name:
                 return_payload_string += "Payload extract = success | "
                 configs = self.generate_configs(my_source, my_sourcetype, index_name)
                 if configs:
                     return_payload_string += "Generate config = success | "
-                    config_write_status = self.write_configs_to_file(configs, app_name, message)
+                    config_write_status = self.write_configs_to_file(configs, app_name, version, message)
                     if config_write_status:
                         return_payload_string += f"Write config = {config_write_status} written | "
                         serverclass_status = self.compare_and_add_serverclass_whitelist_conf(environment, app_name, index_name, my_sourcetype, my_host)
